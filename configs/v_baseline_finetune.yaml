@@ -1,0 +1,63 @@
+# =========================================================================
+# Vanilla ESM2 Baseline — Fine-tuning
+# =========================================================================
+# Standard MLM on paired antibody sequences with NO PRISM modifications.
+# Hyperparameters matched to PRISM v40d finetune for controlled comparison.
+#
+# 2-stage training:
+#   Stage 1 (pretrain): v_baseline_pretrain.yaml → large unpaired OAS data
+#   Stage 2 (this):     v_baseline_finetune.yaml → paired antibody data
+#
+# Set pretrained_checkpoint_path to the best checkpoint from Stage 1.
+#
+# Usage:
+#   python script/train_pure_esm.py --config configs/v_baseline_finetune.yaml
+# =========================================================================
+
+# Set this to the best checkpoint from pretraining
+pretrained_checkpoint_path: "outputs/ESM2_baseline_pretrain_esm2_t12_35M_UR50D_unfrozen12_lr4e-04_bs256/checkpoints/val_ppl-01-1.6246.ckpt"
+
+data:
+  data_path: /path/to/prism/data/train_data/paired_with_clusters_filtered_ngl_split.parquet
+  batch_size: 256
+  mask_prob: 0.15
+  num_workers: 0
+  val_sample_ratio: 0.1
+
+model:
+  model_identifier: esm2_t12_35M_UR50D
+  random_weights: true
+  num_unfrozen_transformer_blocks: 12
+
+training:
+  seed: 42
+  peak_learning_rate: 1e-4
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1e-8
+  weight_decay: 0.01
+  warmup_steps: 500
+  max_steps: 15000
+  logging_steps: 10
+  eval_steps: 20
+  gradient_accumulation_steps: 8
+  gradient_clip_val: 1.0
+
+trainer:
+  devices: 4
+  accelerator: gpu
+  precision: bf16
+  strategy: ddp
+
+logging:
+  output_dir: outputs/
+  experiment_name: ESM2_baseline_finetune
+
+checkpointing:
+  top_k: 5
+  monitor: val/ppl
+
+early_stopping:
+  enabled: true
+  patience: 50
+  monitor: val/ppl

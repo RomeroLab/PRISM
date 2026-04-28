@@ -1,0 +1,172 @@
+# =============================================================================
+# Configuration: v34.1b Ablation 1 - No Pretraining + Multihead Architecture
+# =============================================================================
+#
+# ABLATION STUDY: Testing the contribution of PRETRAINING
+# ========================================================
+# This config is identical to v34.1b EXCEPT:
+# - NO pretrained_checkpoint_path (starts from random ESM2 weights)
+#
+# Comparison:
+# - v34.1b (baseline): Pretrained on 66M unpaired → Finetuned on paired
+# - Ablation 1 (this): Random init → Trained on paired only
+#
+# Expected Impact:
+# - Worse PPL due to lack of transfer learning from unpaired sequences
+# - Tests whether pretraining on 66M sequences provides meaningful benefit
+#
+# =============================================================================
+
+# NO pretrained checkpoint - start from random ESM2 weights
+# pretrained_checkpoint_path: null  # Explicitly omitted
+
+# Data configuration (same as v34.1b - paired data)
+data:
+  data_path: "/path/to/prism/data/unpaired_OAS/annotated_data_final/paired_with_clusters_filtered_ngl_split.parquet"
+  mask_prob: 0.15
+  num_workers: 0
+  batch_size: 256
+  lazy_loading: true
+  enable_sharding: true
+  val_sample_ratio: 0.1
+
+# Model configuration (SAME as v34.1b - full multihead architecture)
+model:
+  model_identifier: "esm2_t12_35M_UR50D"
+  num_unfrozen_transformer_blocks: 12
+  random_weights: true  # Start from random weights (no pretrained loading)
+  add_custom_tokens: true
+  custom_token_strategy: "lowercase_ngl"
+  activation_function: "swiglu"
+
+  # Multi-Task Head Architecture (SAME as v34.1b)
+  use_multihead_architecture: true
+
+  # Task 1: Amino Acid Identity Loss
+  aa_loss_weight: 1.0
+  aa_focal_gamma: 2.0
+  aa_loss_ngl_weight: 0.5
+
+  # Task 2: Binary Origin/Mutation Detection Loss
+  mut_loss_weight: 1.5
+  mut_focal_gamma: 2.0
+  origin_focal_gamma: 2.0
+
+  # NGL Loss Weighting (SAME as v34.1b)
+  ngl_loss_alpha: 3.0
+
+  # Alpha Gating & Final Loss
+  use_alpha_gating: true
+  final_loss_weight: 2.0
+
+  # Multiplicative Gating
+  use_multiplicative_gating: true
+  gating_temperature: 0.5
+  gating_temperature_warmup_steps: 500
+
+  # Sequential Detach Architecture
+  detach_origin_gradient: true
+
+  # Origin Head Regularization
+  origin_head_dropout: 0.1
+
+  # Architecture Controls
+  tie_word_embeddings: false
+  use_lora: false
+  lora_r: 4
+  lora_alpha: 1
+  lora_dropout: 0.0
+
+  # Conditioning (Gene & Region Embeddings) - SAME as v34.1b
+  use_germline_genes: true
+  gene_vocab_path: "/path/to/prism/data/unpaired_OAS/annotated_data_final/gene_vocabulary.json"
+  gene_embedding_dim: 64
+  gene_embedding_dropout: 0.1
+  use_region_embedding: true
+  num_regions: 8
+  region_embedding_dim: 32
+
+  # Disabled features
+  use_biophysical_features: false
+  use_position_aware_genes: false
+
+  # Region-Balanced Loss
+  use_region_balanced_loss: true
+
+  # CDR-Focused Region Masking (SAME as v34.1b)
+  use_region_masking: true
+  cdr_mask_prob: 0.50
+  fr_mask_prob: 0.30
+
+  # CDR Loss Boosting
+  use_cdr_loss_boosting: true
+  cdr_loss_multiplier: 2.0
+
+  # Legacy (Disabled)
+  use_glngl_classification: false
+  glngl_loss_weight: 0.1
+  glngl_focal_gamma: 2.0
+  glngl_focal_alpha: 0.75
+
+  # NGL-targeted masking DISABLED
+  ngl_targeted_masking: false
+  ngl_mask_prob: 0.8
+
+  # NGL Masking Schedule: DISABLED
+  ngl_mask_schedule:
+    enabled: false
+    start_prob: 0.8
+    end_prob: 0.5
+    start_step: 0
+    end_step: 3000
+
+# Training hyperparameters
+# Learning rate: 4e-4 (same as pretraining since no pretrained checkpoint)
+training:
+  seed: 42
+  peak_learning_rate: 0.0004  # 4e-4 (training from scratch)
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.01
+  warmup_steps: 500
+  max_steps: 15000
+  logging_steps: 10
+  eval_steps: 20
+  loss_type: "focal_loss"
+  gradient_accumulation_steps: 16  # 256 * 16 * 2 = 8192 effective batch
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: "norm"
+
+# PyTorch Lightning trainer configuration
+trainer:
+  devices: 2
+  accelerator: "gpu"
+  precision: "bf16-mixed"
+  strategy: "ddp_find_unused_parameters_true"
+  compile: false
+  compile_mode: "reduce-overhead"
+
+# Logging configuration
+logging:
+  output_dir: "outputs"
+  experiment_name: "ESM2_v34.1b_ablation1_no_pretrain"
+
+# Checkpointing configuration
+checkpointing:
+  top_k: 3
+  monitor: "val/Final_PPL_NGL"
+  mode: "min"
+
+# Early stopping configuration
+early_stopping:
+  enabled: true
+  patience: 50
+  monitor: "val/Final_PPL_NGL"
+
+# Developability tracking configuration
+developability_tracking:
+  enabled: true
+  data_path: "/path/to/prism/data/ginkgo/developability_data.csv"
+  eval_every_n: 10
+  sample_size: 100

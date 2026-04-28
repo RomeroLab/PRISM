@@ -1,0 +1,70 @@
+# =========================================================================
+# Vanilla ESM2 Baseline — Pretraining
+# =========================================================================
+# Standard MLM on OAS antibody sequences with NO PRISM modifications.
+# Hyperparameters matched to PRISM v40 pretrain for controlled comparison.
+#
+# What's different from PRISM:
+#   - Standard 33-token ESM2 vocabulary (no lowercase NGL tokens)
+#   - Standard ESM2 LM head (no origin head, alpha gating, dual AA heads)
+#   - Uniform 15% masking (no NGL-targeted / region-based / coherence masking)
+#   - Standard cross-entropy loss (no focal loss, region balancing, CDR boosting)
+#   - Standard GELU activation (no SwiGLU)
+#   - No gene conditioning, no region embeddings
+#   - No divergence loss, no SHM weighting
+#
+# What's the same as PRISM:
+#   - ESM2-35M architecture (12 layers, 35M parameters)
+#   - Random weight initialization (training from scratch)
+#   - Same OAS training data and splits
+#   - Same optimizer (AdamW), LR schedule (cosine + warmup)
+#   - Same batch size, gradient accumulation, precision
+#
+# Usage:
+#   python script/train_pure_esm.py --config configs/v_baseline_pretrain.yaml
+# =========================================================================
+
+data:
+  data_path: /path/to/prism/data/train_data/shards/
+  batch_size: 256
+  mask_prob: 0.15
+  num_workers: 0
+  val_sample_ratio: 0.1
+
+model:
+  model_identifier: esm2_t12_35M_UR50D
+  random_weights: true
+  num_unfrozen_transformer_blocks: 12
+
+training:
+  seed: 42
+  peak_learning_rate: 4e-4
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1e-8
+  weight_decay: 0.01
+  warmup_steps: 500
+  max_steps: 10000
+  logging_steps: 10
+  eval_steps: 100
+  gradient_accumulation_steps: 8
+  gradient_clip_val: 1.0
+
+trainer:
+  devices: 4
+  accelerator: gpu
+  precision: bf16
+  strategy: ddp
+
+logging:
+  output_dir: outputs/
+  experiment_name: ESM2_baseline_pretrain
+
+checkpointing:
+  top_k: 5
+  monitor: val/ppl
+
+early_stopping:
+  enabled: true
+  patience: 200
+  monitor: val/ppl

@@ -1,0 +1,170 @@
+# =============================================================================
+# Configuration: v34 Ablation 2a - Simple Head Pretraining on Unpaired Data
+# =============================================================================
+#
+# ABLATION STUDY: Testing the contribution of MULTIHEAD ARCHITECTURE
+# ===================================================================
+# This config trains a SIMPLE LM HEAD model on 66M unpaired sequences.
+# It serves as the pretraining stage for Ablation 2.
+#
+# Key Differences from v34 (baseline pretraining):
+# ------------------------------------------------
+# | Parameter                  | v34 (baseline) | Ablation 2a (this) |
+# |----------------------------|----------------|---------------------|
+# | use_multihead_architecture | true           | FALSE               |
+# | loss_type                  | focal_loss     | focal_loss          |
+# | use_germline_genes         | true           | FALSE               |
+# | use_region_embedding       | true           | FALSE               |
+# | use_region_balanced_loss   | true           | FALSE               |
+# | use_region_masking         | true           | FALSE               |
+# | ngl_loss_alpha             | 1.0            | N/A                 |
+#
+# Architecture:
+# -------------
+# Simple ESM2 LM Head:
+#   ESM2 Backbone → Dense(480→480) → GELU → LayerNorm → Linear(480→53)
+#
+# Loss: Focal Loss only (standard MLM, no multi-task, no NGL weighting)
+#
+# Purpose:
+# --------
+# Create a pretrained checkpoint that uses ONLY the simple LM head,
+# which will then be finetuned in Ablation 2b (simple paired).
+#
+# =============================================================================
+
+# Data configuration (SAME as v34 - 66M unpaired)
+data:
+  data_path: "/path/to/prism/data/unpaired_OAS/annotated_data_final/shards/"
+  mask_prob: 0.15
+  num_workers: 0
+  batch_size: 256
+  lazy_loading: true
+  enable_sharding: true
+  val_sample_ratio: 0.1
+
+# Model configuration
+model:
+  model_identifier: "esm2_t12_35M_UR50D"
+  num_unfrozen_transformer_blocks: 12
+  random_weights: true  # Train from scratch
+  add_custom_tokens: true
+  custom_token_strategy: "lowercase_ngl"  # Still use 53-token vocab
+  activation_function: "swiglu"
+
+  # ==========================================================================
+  # [ABLATION 2] SIMPLE HEAD - No multihead architecture
+  # ==========================================================================
+  use_multihead_architecture: false
+
+  # These are ignored when use_multihead_architecture=false, but kept for reference
+  aa_loss_weight: 1.0
+  aa_focal_gamma: 2.0
+  aa_loss_ngl_weight: 1.0
+  mut_loss_weight: 1.0
+  mut_focal_gamma: 2.0
+  origin_focal_gamma: 2.0
+  ngl_loss_alpha: 1.0
+  use_alpha_gating: false
+  final_loss_weight: 1.0
+  use_multiplicative_gating: false
+  gating_temperature: 1.0
+  gating_temperature_warmup_steps: 0
+  detach_origin_gradient: false
+  origin_head_dropout: 0.0
+
+  # Architecture Controls
+  tie_word_embeddings: false
+  use_lora: false
+  lora_r: 4
+  lora_alpha: 1
+  lora_dropout: 0.0
+
+  # ==========================================================================
+  # [ABLATION 2] NO CONDITIONING - Pure vanilla protein language model
+  # ==========================================================================
+  use_germline_genes: false
+  gene_embedding_dim: 64
+  gene_embedding_dropout: 0.1
+  use_region_embedding: false
+  num_regions: 8
+  region_embedding_dim: 32
+
+  # Disabled features
+  use_biophysical_features: false
+  use_position_aware_genes: false
+
+  # ==========================================================================
+  # [ABLATION 2] NO REGION-BASED FEATURES
+  # ==========================================================================
+  use_region_balanced_loss: false
+  use_region_masking: false
+  cdr_mask_prob: 0.15  # Will use uniform mask_prob since region_masking=false
+  fr_mask_prob: 0.15
+
+  # CDR Loss Boosting - DISABLED
+  use_cdr_loss_boosting: false
+  cdr_loss_multiplier: 1.0
+
+  # Legacy GL/NGL Classification - DISABLED
+  use_glngl_classification: false
+  glngl_loss_weight: 0.1
+  glngl_focal_gamma: 2.0
+  glngl_focal_alpha: 0.75
+
+  # NGL-targeted masking - DISABLED
+  ngl_targeted_masking: false
+  ngl_mask_prob: 0.15
+
+  # NGL Masking Schedule - DISABLED
+  ngl_mask_schedule:
+    enabled: false
+    start_prob: 0.15
+    end_prob: 0.15
+    start_step: 0
+    end_step: 1000
+
+# Training hyperparameters
+# Learning rate: 4e-4 (pretraining from scratch)
+training:
+  seed: 42
+  peak_learning_rate: 0.0004  # 4e-4 (pretraining)
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.01
+  warmup_steps: 1000
+  max_steps: 10000
+  logging_steps: 10
+  eval_steps: 100
+  loss_type: "focal_loss"  # [ABLATION 2] Use focal loss (same as baseline)
+  gradient_accumulation_steps: 16  # 256 * 16 * 2 = 8192 effective batch
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: "norm"
+
+# PyTorch Lightning trainer configuration
+trainer:
+  devices: 2
+  accelerator: "gpu"
+  precision: "bf16-mixed"
+  strategy: "ddp_find_unused_parameters_true"
+  compile: false
+  compile_mode: "reduce-overhead"
+
+# Logging configuration
+logging:
+  output_dir: "outputs"
+  experiment_name: "ESM2_v34_ablation2_simple_unpaired"
+
+# Checkpointing configuration
+# For simple head, we only have standard PPL (no multihead metrics)
+checkpointing:
+  top_k: 3
+  monitor: "val/ppl_all"  # Standard PPL for non-multihead
+  mode: "min"
+
+# Early stopping configuration
+early_stopping:
+  enabled: true
+  patience: 50
+  monitor: "val/ppl_all"

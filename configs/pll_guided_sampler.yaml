@@ -1,0 +1,80 @@
+# PLL-Guided Antibody Sequence Generation Config
+# Usage:
+#   python pll_guided_sampler.py --config configs/pll_guided_sampler.yaml
+#   python pll_guided_sampler.py --config configs/pll_guided_sampler.yaml --preset diverse
+#   CLI args override config values.
+
+# --- Model ---
+checkpoint: "RomeroLab-Duke/prism-antibody" # HF Hub ID or local checkpoint path
+device: auto # auto | cuda | cpu
+
+# --- Input Sequences (both required) ---
+# Provide via CLI (--heavy_chain, --light_chain) or uncomment below:
+# heavy_chain: "EVQLVESGGGLVQ..."
+# light_chain: "DIQMTQSPSSL..."
+# region_string: "11111222223333344444555555555566666667777"  # covers VH+VL combined
+
+# --- Position Selection: WHERE to mutate ---
+n_mutations: 3                    # max mutations per variant
+pool_size: 10                     # candidate pool (bottom-k by WT log-prob)
+position_temperature: 1.0         # Gumbel noise scale (0=deterministic, high=random)
+randomize_n_mutations: true       # true: n_mut ~ Beta(2,1) in [1, n_mutations]
+
+# --- AA Sampling: WHAT to mutate to ---
+temperature: 1.0                  # softmax temperature for AA distribution
+top_k: null                       # null = disabled
+top_p: null                       # null = disabled (nucleus sampling threshold)
+
+# --- Run Settings ---
+n_samples: 100
+run_all_modes: true               # always run gl, ngl, full, region_specific
+
+# --- Misc ---
+exclude_positions: "1" # 1-indexed, comma-separated. "none" to skip.
+batch_size: 32
+seed: 42
+output: null # null = auto-generated filename
+
+# =============================================================================
+# Presets: control exploration intensity (applied to ALL modes equally)
+# =============================================================================
+presets:
+
+  conservative:
+    # Position: few, deterministic
+    n_mutations: 3
+    pool_size: 10
+    position_temperature: 0.5
+    randomize_n_mutations: false
+    # AA: low temperature, greedy-ish
+    temperature: 0.5
+
+  diverse:
+    # Position: many, randomized count, wide pool
+    n_mutations: 8
+    pool_size: 30
+    position_temperature: 2.0
+    randomize_n_mutations: true
+    # AA: high temperature, nucleus sampling
+    temperature: 1.5
+    top_p: 0.95
+
+  balanced:
+    # Position: medium, randomized count
+    n_mutations: 5
+    pool_size: 20
+    position_temperature: 1.0
+    randomize_n_mutations: true
+    # AA: default temperature
+    temperature: 1.0
+
+  scanning:
+    # Position: single mutation, systematic
+    n_mutations: 1
+    pool_size: 20
+    position_temperature: 0.5
+    randomize_n_mutations: false
+    # AA: near-greedy
+    temperature: 0.3
+    # Run: many samples
+    n_samples: 500

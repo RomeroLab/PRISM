@@ -1,0 +1,99 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prism-antibody"
+version = "1.1.1"
+description = "PRISM - Partitioning Residue Identity in Somatic Maturation for antibody language modeling"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "Anonymous"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "torch>=1.13.0",
+    "pytorch-lightning>=2.0.0",
+    "transformers>=4.30.0",
+    "huggingface-hub>=0.14.0",
+    "numpy>=1.21.0",
+    "pandas>=1.3.0",
+    "pyarrow>=10.0.0",
+    "torchmetrics>=0.11.0",
+    "PyYAML>=6.0",
+    "tqdm>=4.60.0",
+    "tensorboard>=2.11.0",
+    "anarci>=2021.02.04",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+    "isort>=5.10.0",
+    "mypy>=0.950",
+]
+analysis = [
+    "matplotlib>=3.5.0",
+    "seaborn>=0.11.0",
+    "scikit-learn>=1.0.0",
+    "scipy>=1.7.0",
+]
+all = [
+    "prism-antibody[dev,analysis]",
+]
+
+[project.urls]
+Homepage = "https://github.com/RomeroLab-Duke/prism-antibody"
+Repository = "https://github.com/RomeroLab-Duke/prism-antibody"
+Documentation = "https://github.com/RomeroLab-Duke/prism-antibody#readme"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+prism = ["data/*.json"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["prism"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

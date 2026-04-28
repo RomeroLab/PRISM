@@ -1,0 +1,128 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+results/
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyTorch / Lightning
+*.ckpt
+*.pt
+*.pth
+lightning_logs/
+outputs/
+outputs_mis/
+# Data files (keep structure but not large files)
+*.pkl
+*.pickle
+*.parquet
+*.h5
+*.hdf5
+
+# Model artifacts
+checkpoints/
+runs/
+wandb/
+outputs/
+data/
+img/
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local-only (not pushed to public repo)
+tests/
+CLAUDE.md
+.claude/
+
+# Root-level scratch outputs
+/*.txt
+/*.tex
+
+# Large data directories (not tracked in git)
+data/antibody_binding/
+data/controllable_generation/
+data/structural_pdb/
+data/unpaired_OAS/
+# Cached results (from analysis scripts)
+script/analyze/**/developability_results/
+script/analyze/**/binding_results/
+script/analyze/**/*.csv
+script/analyze/**/*.pkl
+
+# Controllable-generation per-antibody outputs and intermediate sweeps
+script/analyze/3.controllable_generation/cr9114/
+script/analyze/3.controllable_generation/g6.31/
+script/analyze/3.controllable_generation/trastuzumab/
+script/analyze/3.controllable_generation/gibbs_results*/
+script/analyze/3.controllable_generation/pll_results/

@@ -1,0 +1,156 @@
+# =============================================================================
+# ABLATION: Alpha Learned (Control — normal learnable gating)
+# =============================================================================
+# PURPOSE: Control experiment for alpha ablation.
+#          Identical to ablation_alpha_fixed.yaml except alpha is learned.
+#          Short run (500 steps) — only early dynamics matter.
+# =============================================================================
+
+# Data configuration
+data:
+  data_path: "/path/to/prism/data/train_data/shards/"
+  mask_prob: 0.15
+  num_workers: 0
+  batch_size: 256
+  lazy_loading: true
+  enable_sharding: true
+  val_sample_ratio: 0.1
+
+# Model configuration (matches v40 pretrain baseline)
+model:
+  model_identifier: "esm2_t12_35M_UR50D"
+  num_unfrozen_transformer_blocks: 12
+  random_weights: true
+  add_custom_tokens: true
+  custom_token_strategy: "lowercase_ngl"
+  activation_function: "swiglu"
+  fix_swiglu_double_activation: true
+
+  # Multi-Task Head Architecture
+  use_multihead_architecture: true
+
+  # Task 1: GL AA Head Loss
+  aa_loss_weight: 1.0
+  aa_focal_gamma: 2.0
+  aa_loss_ngl_weight: 0.3
+
+  # Task 2: Origin Head (2-class)
+  mut_loss_weight: 1.0
+  mut_focal_gamma: 2.0
+  origin_focal_gamma: 2.0
+  num_origin_classes: 2
+
+  # NGL Loss
+  ngl_loss_alpha: 1.0
+
+  # ==============================
+  # CONTROL: alpha is learned (default behavior)
+  # ==============================
+  use_alpha_gating: true
+  # fixed_alpha_value: null  (omitted = None = learnable)
+  final_loss_weight: 0.5
+  use_multiplicative_gating: false
+  gating_temperature: 1.0
+  gating_temperature_warmup_steps: 0
+
+  # Sequential Detach
+  detach_origin_gradient: true
+  origin_head_dropout: 0.1
+  tie_word_embeddings: false
+
+  # Dual AA Heads
+  use_dual_aa_heads: true
+  dual_aa_heads_conditioned: true
+  copy_aa_head_to_ngl: true
+
+  # NGL AA Head
+  ngl_aa_loss_weight: 2.0
+  detach_heads_from_final_loss: false
+  ngl_label_smoothing: 0.05
+
+  # Conditioning
+  use_germline_genes: true
+  gene_vocab_path: "/path/to/prism/data/train_data/gene_vocabulary.json"
+  gene_embedding_dim: 64
+  gene_embedding_dropout: 0.1
+  use_region_embedding: true
+  num_regions: 8
+  region_embedding_dim: 32
+
+  # Region-Balanced Loss
+  use_region_balanced_loss: true
+
+  # 4-Rate Masking
+  use_region_masking: true
+  ngl_targeted_masking: true
+  cdr_ngl_mask_prob: 0.50
+  fr_ngl_mask_prob: 0.40
+  cdr_mask_prob: 0.35
+  fr_mask_prob: 0.15
+
+  use_cdr_loss_boosting: true
+  cdr_loss_multiplier: 1.5
+
+  # Divergence Loss
+  divergence_loss_weight: 0.03
+  divergence_warmup_steps: 300
+  max_kl_divergence: 3.0
+  divergence_type: "js"
+
+  # Coherence Masking
+  use_coherence_masking: true
+  coherence_prob: 0.10
+  coherence_ngl_mask_prob: 0.5
+
+  # SHM Weighting
+  use_shm_weighting: true
+  shm_beta: 0.5
+  shm_mean_ngl: 15.0
+
+# Training hyperparameters (short run)
+training:
+  seed: 42
+  peak_learning_rate: 0.0004
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.01
+  warmup_steps: 50
+  max_steps: 500
+  logging_steps: 5
+  eval_steps: 25
+  loss_type: "focal_loss"
+  gradient_accumulation_steps: 8
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: "norm"
+
+# Trainer
+trainer:
+  devices: 4
+  accelerator: "gpu"
+  precision: "bf16"
+  strategy: "ddp_find_unused_parameters_true"
+  compile: false
+  compile_mode: "reduce-overhead"
+
+# Logging
+logging:
+  output_dir: "outputs"
+  experiment_name: "ablation_alpha_learned"
+
+# Checkpointing
+checkpointing:
+  top_k: 3
+  monitor: "val/Final_PPL_NGL"
+  mode: "min"
+
+# Early stopping DISABLED (short run)
+early_stopping:
+  enabled: false
+  patience: 999
+  monitor: "val/Final_PPL_NGL"
+  mode: "min"
+
+# Developability tracking OFF (not needed for stability ablation)
+developability_tracking:
+  enabled: false

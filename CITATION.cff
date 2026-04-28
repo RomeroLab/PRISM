@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+title: "PRISM: Partitioning Residue Identity in Somatic Maturation"
+message: "If you use this software, please cite the paper below."
+type: software
+authors:
+  - name: "Anonymous"
+abstract: >-
+  PRISM is a multi-head extension of ESM2 that jointly predicts amino acid
+  identity and germline / non-germline (GL/NGL) origin per residue,
+  enabling controllable antibody language modeling with disentangled
+  binding-affinity and developability signals.
+preferred-citation:
+  type: conference-paper
+  title: "Explicit representation of germline and non-germline residues improves antibody language modeling"
+  authors:
+    - name: "Anonymous"
+  year: 2026
+license: MIT
+repository-code: "https://github.com/RomeroLab-Duke/prism-antibody"

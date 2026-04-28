@@ -1,0 +1,202 @@
+# =============================================================================
+# Configuration: v34.1b - CDR & NGL Focused Fine-tuning on Paired Data
+# =============================================================================
+#
+# FINE-TUNING SETUP:
+# ==================
+# - Base: v34 pretrained checkpoint (BALANCED pretraining on 66M unpaired)
+# - Learning Rate: 1e-4 (1/4 of pretraining LR)
+# - Dataset: Paired antibody sequences (~764K samples)
+#
+# STRATEGY: SPECIALIZE AFTER BALANCED PRETRAINING
+# ================================================
+# Unlike v33 which applied NGL bias from the start (corrupting the backbone),
+# v34.1b applies CDR/NGL focus ONLY during finetuning on a balanced foundation.
+#
+# This preserves:
+# - General protein language understanding from balanced pretraining
+# - Ability to predict GL positions accurately
+# - Good overall PPL
+#
+# While adding:
+# - Enhanced NGL prediction via ngl_loss_alpha: 3.0 (moderate, not extreme)
+# - Enhanced CDR learning via higher CDR masking (0.50 vs 0.35)
+#
+# PURPOSE:
+# ========
+# This is the "NGL/CDR specialist" variant, optimized for:
+# - Somatic hypermutation analysis
+# - CDR optimization tasks
+# - Mutation effect prediction
+# - Applications where NGL accuracy matters most
+#
+# KEY DIFFERENCES FROM v34.1a (balanced):
+# =======================================
+# | Parameter        | v34.1a | v34.1b | Effect                          |
+# |------------------|--------|--------|----------------------------------|
+# | ngl_loss_alpha   | 1.0    | 3.0    | 3x weight on NGL positions      |
+# | cdr_mask_prob    | 0.35   | 0.50   | More CDR masking (learning)     |
+# | fr_mask_prob     | 0.35   | 0.30   | Slightly less FR masking        |
+# | aa_loss_ngl_weight| 1.0   | 0.5    | Soft NGL learning in AA head    |
+# | Monitor          | PPL_All| PPL_NGL| Optimizes for NGL prediction    |
+#
+# EXPECTED METRICS:
+# =================
+# - PPL_All: ~1.7-2.0 (slightly higher than v34.1a)
+# - PPL_NGL: ~2.0-2.3 (better than v34.1a)
+# - Developability correlation: ~-0.15 to -0.25 (lower but still present)
+# - Origin F1: ~0.85+ (better mutation detection)
+#
+# CHECKPOINT:
+# ===========
+# Pretrained from: v34 balanced (update path after v34 training completes)
+#
+# =============================================================================
+
+# Pretrained checkpoint to load weights from
+# [UPDATE THIS PATH after v34 pretraining completes]
+pretrained_checkpoint_path: "/path/to/prism/outputs/ESM2_v34_unpaired_balanced_esm2_t12_35M_UR50D_custom_unfrozen12_lr4e-4_bs256/checkpoints/val_Final_PPL_All-04-1.6924.ckpt"
+
+# Data configuration
+data:
+  data_path: "/path/to/prism/data/train_data/paired_with_clusters_filtered_ngl_split.parquet"
+  mask_prob: 0.15
+  num_workers: 0
+  batch_size: 256
+  lazy_loading: true
+  enable_sharding: true
+  val_sample_ratio: 0.1
+
+# Model configuration
+model:
+  model_identifier: "esm2_t12_35M_UR50D"
+  num_unfrozen_transformer_blocks: 12
+  random_weights: true # Will be overwritten by pretrained checkpoint
+  add_custom_tokens: true
+  custom_token_strategy: "lowercase_ngl"
+  activation_function: "swiglu"
+  # Pure SwiGLU activation (no double GELU wrapping)
+  fix_swiglu_double_activation: true
+
+  # Multi-Task Head Architecture
+  use_multihead_architecture: true
+
+  # Task 1: Amino Acid Identity Loss
+  aa_loss_weight: 1.0
+  aa_focal_gamma: 2.0
+
+  # [v34.1b] Soft NGL learning in AA Head
+  # 0.5 = NGL positions contribute 50% weight in AA loss
+  # This prevents the extreme exclusion (v33) while allowing focus on GL
+  aa_loss_ngl_weight: 0.5
+
+  # Task 2: Binary Origin/Mutation Detection Loss
+  # Slightly higher weight to emphasize mutation detection
+  mut_loss_weight: 1.5
+  mut_focal_gamma: 2.0
+  origin_focal_gamma: 2.0
+
+  # ==========================================================================
+  # [v34.1b] MODERATE NGL Focus (3.0x)
+  # ==========================================================================
+  # v33 used 10.0 which was too extreme and corrupted the backbone
+  # v34.1b uses 3.0 which provides NGL emphasis without destroying GL ability
+  # This is applied ONLY during finetuning on a balanced foundation
+  ngl_loss_alpha: 3.0
+
+  # Alpha Gating & Final Loss
+  use_alpha_gating: true
+  final_loss_weight: 2.0 # Higher for NGL-focused training
+
+  # Multiplicative Gating
+  use_multiplicative_gating: true
+  gating_temperature: 0.5
+  gating_temperature_warmup_steps: 500
+
+  # Sequential Detach Architecture
+  detach_origin_gradient: true
+
+  # Origin Head Regularization
+  origin_head_dropout: 0.1
+
+  # Architecture Controls
+  tie_word_embeddings: false
+
+  # Conditioning (Gene & Region Embeddings)
+  use_germline_genes: true
+  gene_vocab_path: "/path/to/prism/data/train_data/gene_vocabulary.json"
+  gene_embedding_dim: 64
+  gene_embedding_dropout: 0.1
+  use_region_embedding: true
+  num_regions: 8
+  region_embedding_dim: 32
+
+  # Region-Balanced Loss
+  use_region_balanced_loss: true
+
+  # ==========================================================================
+  # [v34.1b] CDR-FOCUSED Region Masking
+  # ==========================================================================
+  # Higher CDR masking to learn CDR regions better
+  # This is appropriate for CDR optimization and mutation analysis tasks
+  use_region_masking: true
+  cdr_mask_prob: 0.50 # Higher: Learn CDR regions more
+  fr_mask_prob: 0.30 # Lower: Still learn FR but with less emphasis
+
+  # [v34.1b] CDR Loss Boosting - Additional emphasis on CDR regions
+  # Combined with ngl_loss_alpha, CDR-NGL positions get 3.0 * 2.0 = 6.0x weight
+  use_cdr_loss_boosting: true
+  cdr_loss_multiplier: 2.0
+
+# Training hyperparameters
+training:
+  seed: 42
+  peak_learning_rate: 0.0001 # 1e-4 (1/4 of pretraining LR)
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.01
+  warmup_steps: 500
+  max_steps: 15000 # Extended training for specialization
+  logging_steps: 10
+  eval_steps: 20
+  loss_type: "focal_loss"
+  gradient_accumulation_steps: 8  # 256 * 8 * 4 = 8192 effective batch
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: "norm"
+
+# PyTorch Lightning trainer configuration
+trainer:
+  devices: 4
+  accelerator: "gpu"
+  precision: "bf16-mixed"
+  strategy: "ddp_find_unused_parameters_true"
+  compile: false
+  compile_mode: "reduce-overhead"
+
+# Logging configuration
+logging:
+  output_dir: "outputs"
+  experiment_name: "ESM2_v34.1b_paired_cdr_ngl_focus_bugfix"
+
+# Checkpointing configuration
+# [v34.1b] Monitor PPL_NGL for NGL-focused model
+checkpointing:
+  top_k: 3
+  monitor: "val/Final_PPL_NGL"
+  mode: "min"
+
+# Early stopping configuration
+early_stopping:
+  enabled: false
+  patience: 50
+  monitor: "val/Final_PPL_NGL"
+
+# [v34] Developability tracking configuration
+# Logs Pearson r for 5 properties (HIC, PR_CHO, AC-SINS, Tm2, Titer)
+# every N validation epochs using Final Head Upper PPL
+developability_tracking:
+  enabled: true
+  data_path: "/path/to/prism/data/ginkgo/developability_data.csv"
+  eval_every_n: 10  # Every 10 validation epochs
+  sample_size: 100  # Use 100 sequences for speed

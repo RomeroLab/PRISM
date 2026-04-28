@@ -1,0 +1,135 @@
+# =============================================================================
+# Configuration: v34.1b + 4-flip NGL Label Noise — ICML Rebuttal Experiment
+# =============================================================================
+#
+# PURPOSE:
+# ========
+# Test robustness to noisy GL/NGL labels by flipping 4 random positions per
+# chain (GL→NGL or NGL→GL). This corresponds to ~30% disagreement rate,
+# roughly 2x the natural disagreement between OAS and ANARCI germline callers.
+#
+# KEY DIFFERENCE FROM v34.1b:
+# ===========================
+# | Parameter              | v34.1b | noise2 | This (noise4) | Effect                        |
+# |------------------------|--------|--------|---------------|-------------------------------|
+# | ngl_label_noise_flips  | 0      | 2      | 4             | 4 positions flipped per chain |
+#
+# The flips are DETERMINISTIC per sequence (hash-based seed), so the same
+# positions are flipped every epoch. Only applied to training set.
+#
+# ARCHITECTURE: Identical to v34.1b (the published model)
+# PRETRAINED FROM: v34 unpaired balanced checkpoint
+# =============================================================================
+
+# Pretrained checkpoint to load weights from
+pretrained_checkpoint_path: "/path/to/prism/outputs/ESM2_v34_unpaired_balanced_esm2_t12_35M_UR50D_custom_unfrozen12_lr4e-4_bs256/checkpoints/val_Final_PPL_All-04-1.6924.ckpt"
+
+# Data configuration
+data:
+  data_path: "/path/to/prism/data/train_data/paired_with_clusters_filtered_ngl_split.parquet"
+  mask_prob: 0.15
+  num_workers: 0
+  batch_size: 256
+  lazy_loading: true
+  enable_sharding: true
+  val_sample_ratio: 0.1
+  # [REBUTTAL] Flip 4 GL/NGL labels per chain (train only, deterministic per sequence)
+  ngl_label_noise_flips: 4
+
+# Model configuration — identical to v34.1b
+model:
+  model_identifier: "esm2_t12_35M_UR50D"
+  num_unfrozen_transformer_blocks: 12
+  random_weights: true
+  add_custom_tokens: true
+  custom_token_strategy: "lowercase_ngl"
+  activation_function: "swiglu"
+  fix_swiglu_double_activation: true
+
+  use_multihead_architecture: true
+
+  aa_loss_weight: 1.0
+  aa_focal_gamma: 2.0
+  aa_loss_ngl_weight: 0.5
+
+  mut_loss_weight: 1.5
+  mut_focal_gamma: 2.0
+  origin_focal_gamma: 2.0
+  ngl_loss_alpha: 3.0
+
+  use_alpha_gating: true
+  final_loss_weight: 2.0
+
+  use_multiplicative_gating: true
+  gating_temperature: 0.5
+  gating_temperature_warmup_steps: 500
+
+  detach_origin_gradient: true
+  origin_head_dropout: 0.1
+  tie_word_embeddings: false
+
+  use_germline_genes: true
+  gene_vocab_path: "/path/to/prism/data/train_data/gene_vocabulary.json"
+  gene_embedding_dim: 64
+  gene_embedding_dropout: 0.1
+  use_region_embedding: true
+  num_regions: 8
+  region_embedding_dim: 32
+
+  use_region_balanced_loss: true
+  use_region_masking: true
+  cdr_mask_prob: 0.50
+  fr_mask_prob: 0.30
+
+  use_cdr_loss_boosting: true
+  cdr_loss_multiplier: 2.0
+
+# Training hyperparameters — identical to v34.1b
+training:
+  seed: 42
+  peak_learning_rate: 0.0001
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.01
+  warmup_steps: 500
+  max_steps: 15000
+  logging_steps: 10
+  eval_steps: 20
+  loss_type: "focal_loss"
+  gradient_accumulation_steps: 8
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: "norm"
+
+# PyTorch Lightning trainer configuration
+trainer:
+  devices: 4
+  accelerator: "gpu"
+  precision: "bf16"
+  strategy: "ddp_find_unused_parameters_true"
+  compile: false
+  compile_mode: "reduce-overhead"
+
+# Logging configuration
+logging:
+  output_dir: "outputs"
+  experiment_name: "ESM2_v34.1b_noise4flip_rebuttal"
+
+# Checkpointing — monitor same metric as v34.1b for fair comparison
+checkpointing:
+  top_k: 3
+  monitor: "val/Final_PPL_NGL"
+  mode: "min"
+
+# Early stopping configuration
+early_stopping:
+  enabled: true
+  patience: 50
+  monitor: "val/Final_PPL_NGL"
+
+# Developability tracking
+developability_tracking:
+  enabled: true
+  data_path: "/path/to/prism/data/ginkgo/developability_data.csv"
+  eval_every_n: 10
+  sample_size: 100

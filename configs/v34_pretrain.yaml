@@ -1,0 +1,175 @@
+# =============================================================================
+# Configuration: v34 - Balanced Pretraining (No GL/NGL or FR/CDR Bias)
+# =============================================================================
+#
+# MOTIVATION:
+# ===========
+# v33 pretraining had three compounding issues:
+#   1. ngl_loss_alpha: 10.0 - NGL positions got 10x loss weight
+#   2. AA Head exclusion (exclude_ngl=True) - AA Head never learned NGL positions
+#   3. Unequal masking (CDR: 0.50, FR: 0.30) - Biased toward CDR regions
+#
+# This created an "NGL specialist" model that lost general AA prediction ability:
+#   - Evo-Ab PPL: ~24 (vs ESM2-35M: ~7)
+#   - Developability correlation: ~0 (vs ESM2-35M: -0.34***)
+#
+# v34 STRATEGY - BALANCED PRETRAINING:
+# ====================================
+# 1. ngl_loss_alpha: 1.0 - Equal weight for GL and NGL positions
+# 2. aa_loss_ngl_weight: 1.0 - AA Head learns ALL positions (no exclusion)
+# 3. Equal masking: CDR = FR = 0.35 - No region bias
+# 4. Focal loss still applied - Handles class imbalance naturally
+#
+# EXPECTED OUTCOME:
+# =================
+# - PPL: Should approach ESM2-35M (~6-8 range)
+# - Developability correlation: Should recover to ~-0.25 to -0.35
+# - NGL detection: May be slightly lower than v33, but model is more general
+#
+# TRAINING SETUP:
+# ===============
+# - Dataset: 66M unpaired antibody sequences
+# - Hardware: 4x 40GB GPUs
+# - Effective batch size: 256 * 8 * 4 = 8192
+# - Target: 10,000 steps
+#
+# =============================================================================
+
+# Data configuration
+data:
+  data_path: "/path/to/prism/data/train_data/shards/"
+  mask_prob: 0.15
+  num_workers: 0  # Disabled for memory stability with DDP
+  batch_size: 256
+  lazy_loading: true
+  enable_sharding: true
+  val_sample_ratio: 0.1
+
+# Model configuration
+model:
+  model_identifier: "esm2_t12_35M_UR50D"
+  num_unfrozen_transformer_blocks: 12
+  random_weights: true  # Train from scratch (works better for domain-specific)
+  add_custom_tokens: true
+  custom_token_strategy: "lowercase_ngl"
+  activation_function: "swiglu"
+  fix_swiglu_double_activation: true  # Pure SwiGLU (no double GELU wrapping)
+
+  # ==========================================================================
+  # Multi-Task Head Architecture
+  # ==========================================================================
+  use_multihead_architecture: true
+
+  # Task 1: Amino Acid Identity Loss
+  aa_loss_weight: 1.0
+  aa_focal_gamma: 2.0
+
+  # [v34 KEY CHANGE] AA Head learns ALL positions (including NGL)
+  # This removes the train/test mismatch where AA Head was trained on GL-only
+  # but evaluated on ALL positions during inference
+  aa_loss_ngl_weight: 1.0  # 1.0 = equal weight for NGL in AA loss
+
+  # Task 2: Binary Origin/Mutation Detection Loss
+  mut_loss_weight: 1.0  # Reduced from 1.5 for balance
+  mut_focal_gamma: 2.0
+  origin_focal_gamma: 2.0
+
+  # ==========================================================================
+  # [v34 KEY CHANGE] BALANCED NGL Loss - No reweighting
+  # ==========================================================================
+  # v33 used 10.0 which biased the transformer backbone toward NGL features
+  # v34 uses 1.0 for balanced learning across all positions
+  ngl_loss_alpha: 1.0
+
+  # Alpha Gating & Final Loss
+  use_alpha_gating: true
+  final_loss_weight: 1.5  # Slightly reduced for balance
+
+  # Multiplicative Gating
+  use_multiplicative_gating: true
+  gating_temperature: 0.5
+  gating_temperature_warmup_steps: 1000
+
+  # Sequential Detach Architecture
+  detach_origin_gradient: true
+
+  # Origin Head Regularization
+  origin_head_dropout: 0.1
+
+  # Architecture Controls
+  tie_word_embeddings: false
+
+  # Conditioning (Gene & Region Embeddings)
+  use_germline_genes: true
+  gene_vocab_path: "/path/to/prism/data/train_data/gene_vocabulary.json"
+  gene_embedding_dim: 64
+  gene_embedding_dropout: 0.1
+  use_region_embedding: true
+  num_regions: 8
+  region_embedding_dim: 32
+
+  # Region-Balanced Loss
+  use_region_balanced_loss: true
+
+  # ==========================================================================
+  # [v34 KEY CHANGE] EQUAL Region Masking
+  # ==========================================================================
+  # v33 used CDR: 0.50, FR: 0.30 which biased toward CDR regions
+  # v34 uses equal probability for unbiased representation learning
+  use_region_masking: true
+  cdr_mask_prob: 0.35
+  fr_mask_prob: 0.35
+
+# Training hyperparameters
+training:
+  seed: 42
+  peak_learning_rate: 0.0004  # 4e-4 (same as v33)
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.01
+  warmup_steps: 1000  # 10% of max_steps
+  max_steps: 10000
+  logging_steps: 10
+  eval_steps: 100
+  loss_type: "focal_loss"
+  gradient_accumulation_steps: 8  # 256 * 8 * 4 = 8192 effective batch
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: "norm"
+
+# PyTorch Lightning trainer configuration
+trainer:
+  devices: 4
+  accelerator: "gpu"
+  precision: "bf16-mixed"
+  strategy: "ddp_find_unused_parameters_true"
+  compile: false
+  compile_mode: "reduce-overhead"
+
+# Logging configuration
+logging:
+  output_dir: "outputs"
+  experiment_name: "ESM2_v34_unpaired_balanced"
+
+# Checkpointing configuration
+# [v34] DUAL BALANCED CHECKPOINTING - Save best for both metrics
+#
+# Strategy: Keep best checkpoints for BOTH PPL_All and PPL_NGL
+# - PPL_All best: Use for developability prediction tasks
+# - PPL_NGL best: Use if NGL prediction quality matters
+# - Last: Safety net in case metrics don't capture true quality
+#
+# This saves:
+# - val_Final_PPL_All-{epoch}-{value}.ckpt (top 2)
+# - val_Final_PPL_NGL-{epoch}-{value}.ckpt (top 2)
+# - last.ckpt (always)
+checkpointing:
+  top_k: 2
+  monitor: "dual_balanced"  # [v34] Saves both PPL_All and PPL_NGL best checkpoints
+  mode: "min"
+
+# Early stopping configuration
+early_stopping:
+  enabled: false
+  patience: 20
+  monitor: "val/Final_PPL_All"
